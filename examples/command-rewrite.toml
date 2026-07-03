@@ -1,0 +1,14 @@
+listen = "127.0.0.1:8080"
+
+[[plugins]]
+type = "command_rewrite"
+
+[plugins.request]
+program = "python3"
+args = ["examples/rewriters/header_marker.py", "request"]
+timeout_ms = 1000
+
+[plugins.response]
+program = "python3"
+args = ["examples/rewriters/header_marker.py", "response"]
+timeout_ms = 1000

@@ -1,0 +1,29 @@
+[package]
+name = "traffwd"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+description = "A programmable traffic forwarding proxy."
+
+[dependencies]
+anyhow = "1.0.95"
+async-trait = "0.1.83"
+axum = "0.8.1"
+base64 = "0.22.1"
+bytes = "1.9.0"
+clap = { version = "4.5.23", features = ["derive", "env"] }
+http = "1.2.0"
+http-body-util = "0.1.2"
+hyper = { version = "1.5.2", features = ["client", "http1", "server"] }
+hyper-util = { version = "0.1.10", features = ["client-legacy", "http1", "server", "tokio"] }
+serde = { version = "1.0.217", features = ["derive"] }
+serde_json = "1.0.135"
+thiserror = "2.0.9"
+tokio = { version = "1.42.0", features = ["fs", "io-util", "macros", "net", "process", "rt-multi-thread", "signal", "time"] }
+toml = "0.9.8"
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
+url = "2.5.4"
+
+[dev-dependencies]
+tempfile = "3.26.0"
