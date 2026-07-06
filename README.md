@@ -1,11 +1,13 @@
 # traffwd
 
-`traffwd` 是一个使用 Rust 2024 编写的可编程网络流量代理应用。项目当前优先实现 HTTP 明文代理：它不仅转发请求，还在请求和响应路径上预留了可插拔的流量重写能力，便于后续扩展鉴权、观测、注入、脱敏等处理。
+`traffwd` 是一个使用 Rust 2024 编写的可编程网络流量代理应用。项目当前优先实现 HTTP 明文代理和 HTTPS `CONNECT` 隧道：它不仅转发请求，还在 HTTP 请求和响应路径上预留了可插拔的流量重写能力，便于后续扩展鉴权、观测、注入、脱敏等处理。
 
 ## 当前能力
 
 - HTTP 代理监听本地地址并转发上游 `http://` 请求。
+- 支持 HTTPS `CONNECT` 隧道，可作为系统或浏览器的 HTTPS 代理使用。
 - 支持 CLI 指定监听地址，或从 TOML 配置文件加载运行参数。
+- 未启用响应改写插件时，响应体会按上游 chunk/frame 流式透传；`Content-Type: text/event-stream` 的 SSE 响应即使启用了响应改写插件也会自动保持流式转发。
 - 内置 `command_rewrite` 插件：用户配置外部命令，命令通过 stdin/stdout JSON 协议接收流量并返回重写结果。
 - 请求插件按配置顺序执行，响应插件按相反顺序执行，方便形成类似中间件的处理栈。
 
@@ -50,7 +52,7 @@ TRAFFWD_CONFIG=examples/command-rewrite.toml cargo run
 cargo run -- --config examples/command-rewrite.toml
 ```
 
-当前版本只支持 HTTP 明文代理，不支持 HTTPS `CONNECT` 隧道。因此系统代理里只配置 HTTP/Web Proxy，暂时不要开启 HTTPS/Secure Web Proxy。
+HTTP/Web Proxy 和 HTTPS/Secure Web Proxy 都可以指向 `traffwd`。HTTPS 流量通过 `CONNECT` 建立 TCP 隧道转发；当前不会解密 TLS，也不会对隧道内的 HTTPS 请求/响应执行插件改写。
 
 ### macOS
 
@@ -61,7 +63,7 @@ cargo run -- --config examples/command-rewrite.toml
 3. 选择当前网络服务，例如 Wi-Fi。
 4. 进入 Details → Proxies。
 5. 开启 Web Proxy (HTTP)，地址填 `127.0.0.1`，端口填 `8080`。
-6. 不要开启 Secure Web Proxy (HTTPS)。
+6. 开启 Secure Web Proxy (HTTPS)，地址同样填 `127.0.0.1`，端口填 `8080`。
 
 命令行方式：
 
@@ -69,13 +71,15 @@ cargo run -- --config examples/command-rewrite.toml
 networksetup -listallnetworkservices
 networksetup -setwebproxy "Wi-Fi" 127.0.0.1 8080
 networksetup -setwebproxystate "Wi-Fi" on
-networksetup -setsecurewebproxystate "Wi-Fi" off
+networksetup -setsecurewebproxy "Wi-Fi" 127.0.0.1 8080
+networksetup -setsecurewebproxystate "Wi-Fi" on
 ```
 
 关闭代理：
 
 ```sh
 networksetup -setwebproxystate "Wi-Fi" off
+networksetup -setsecurewebproxystate "Wi-Fi" off
 ```
 
 如果你的网络服务名称不是 `Wi-Fi`，把命令里的 `Wi-Fi` 换成 `networksetup -listallnetworkservices` 输出的名称。
@@ -90,7 +94,7 @@ networksetup -setwebproxystate "Wi-Fi" off
 4. Address 填 `127.0.0.1`，Port 填 `8080`。
 5. 保存设置。
 
-当前版本不建议让 HTTPS 流量经过系统代理；浏览器或系统如果把 HTTPS 请求发到 traffwd，会因为尚未支持 `CONNECT` 而失败。
+HTTPS 流量会通过 `CONNECT` 隧道转发；traffwd 不解密 TLS，因此 `command_rewrite` 只作用于普通 HTTP 请求/响应，不作用于隧道内的 HTTPS 内容。
 
 ### Linux / GNOME
 
@@ -100,7 +104,7 @@ networksetup -setwebproxystate "Wi-Fi" off
 2. 进入 Network → Network Proxy。
 3. 选择 Manual。
 4. HTTP Proxy 填 `127.0.0.1`，端口填 `8080`。
-5. HTTPS Proxy 暂时留空。
+5. HTTPS Proxy 填 `127.0.0.1`，端口填 `8080`。
 
 ### 命令行工具
 
@@ -109,12 +113,14 @@ networksetup -setwebproxystate "Wi-Fi" off
 ```sh
 export HTTP_PROXY=http://127.0.0.1:8080
 export http_proxy=http://127.0.0.1:8080
+export HTTPS_PROXY=http://127.0.0.1:8080
+export https_proxy=http://127.0.0.1:8080
 ```
 
 关闭当前 shell 的代理环境变量：
 
 ```sh
-unset HTTP_PROXY http_proxy
+unset HTTP_PROXY http_proxy HTTPS_PROXY https_proxy
 ```
 
 ## 配置示例
@@ -238,12 +244,11 @@ timeout_ms = 1000
 - `PluginConfig` 描述可用插件类型，当前主扩展路径是 `command_rewrite`。
 - `TrafficPlugin` 是流量处理扩展点，插件可实现 `on_request` 和 `on_response`。
 - `build_plugins` 将配置转换为运行时插件栈。
-- `HttpProxy` 负责连接监听、请求归一化、上游转发、响应收集，以及在请求/响应路径上调用插件栈。
+- `HttpProxy` 负责连接监听、请求归一化、HTTP 上游转发、HTTPS `CONNECT` 隧道、响应收集，以及在请求/响应路径上调用插件栈。
 
 ## 限制
 
-- 当前只支持 HTTP 明文代理和 `http://` 上游请求。
-- 当前不支持 HTTPS `CONNECT` 隧道，也不处理 TLS 终止。
-- 当前会收集完整请求体和响应体后再转发/返回，不适合直接处理超大流量或流式场景。
+- 当前支持 HTTP 明文代理和 HTTPS `CONNECT` 隧道；HTTPS 隧道只做 TCP 转发，不处理 TLS 终止，也不读取或改写隧道内流量。
+- 当前会收集完整请求体后再转发；启用响应改写插件时也会收集完整响应体，因此这类配置不适合超大响应。标准 `Content-Type: text/event-stream` 的 SSE 响应会自动跳过响应改写插件并保持流式转发。
 - `command_rewrite` 当前每次请求/响应都会启动一个进程，适合先验证协议和能力；高吞吐场景后续应扩展为长驻进程或本地 RPC。
 - 当前 header 协议要求 header value 可表示为 UTF-8 字符串；二进制 header value 暂不支持。

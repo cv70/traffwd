@@ -24,6 +24,10 @@ pub enum PluginError {
 pub trait TrafficPlugin: Send + Sync {
     fn name(&self) -> &'static str;
 
+    fn requires_buffered_response(&self) -> bool {
+        false
+    }
+
     async fn on_request(&self, request: ProxyRequest) -> Result<ProxyRequest, PluginError> {
         Ok(request)
     }
@@ -67,4 +71,10 @@ pub async fn apply_response_plugins(
     }
 
     Ok(response)
+}
+
+pub fn has_buffered_response_plugins(plugins: &[Box<dyn TrafficPlugin>]) -> bool {
+    plugins
+        .iter()
+        .any(|plugin| plugin.requires_buffered_response())
 }

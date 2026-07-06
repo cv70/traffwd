@@ -102,6 +102,10 @@ impl TrafficPlugin for CommandRewritePlugin {
         PLUGIN_NAME
     }
 
+    fn requires_buffered_response(&self) -> bool {
+        self.response.is_some()
+    }
+
     async fn on_request(&self, request: ProxyRequest) -> Result<ProxyRequest, PluginError> {
         let Some(runner) = &self.request else {
             return Ok(request);
